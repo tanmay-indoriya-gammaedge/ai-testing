@@ -14,14 +14,18 @@ MODEL = "openai/gpt-oss-120b"
 messages = [
     {
         "role": "system",
-        "content": "You are a playful AI assistant. Be weird."
+        "content": "You are a playful AI assistant. Be weird. when you receive ['quit' or 'exit'] as input, write a simple goodbye."
     }
 ]
 
 token_usage = 0
 
 
-# Stubbed function
+def extract_task(**kwargs):
+    task = TaskResponse.model_validate(kwargs)
+    return task.model_dump()
+
+
 def get_user_profile(user_id):
     return {
         "user_id": user_id,
@@ -37,6 +41,21 @@ def streamed_resp():
         user = input("user> ")
 
         if user.lower() in ["quit", "exit"]:
+            goodbye = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                stream=True
+            )
+
+            for chunk in goodbye:
+                if not chunk.choices:
+                    continue
+
+                content = chunk.choices[0].delta.content
+
+                if content:
+                    print(content, end="", flush=True)
+
             print(f"\nTotal tokens used: {token_usage}")
             break
 
@@ -45,7 +64,6 @@ def streamed_resp():
             "content": user
         })
 
-        # Initial API request
         resp = client.chat.completions.create(
             model=MODEL,
             messages=messages,
@@ -56,27 +74,23 @@ def streamed_resp():
 
         assistant_reply = ""
         tool_calls = {}
-        usage = None
 
         print("AI> ", end="", flush=True)
 
         for chunk in resp:
 
             if chunk.usage:
-                usage = chunk.usage
-                token_usage += usage.total_tokens
+                token_usage += chunk.usage.total_tokens
 
             if not chunk.choices:
                 continue
 
             delta = chunk.choices[0].delta
 
-            # Stream normal text
             if delta.content:
                 print(delta.content, end="", flush=True)
                 assistant_reply += delta.content
 
-            # Collect tool calls
             if delta.tool_calls:
                 for tool_delta in delta.tool_calls:
 
@@ -110,7 +124,6 @@ def streamed_resp():
 
         print(flush=True)
 
-        # No tool calls: save normal response
         if not tool_calls:
             messages.append({
                 "role": "assistant",
@@ -118,14 +131,12 @@ def streamed_resp():
             })
             continue
 
-        # Save assistant's tool request
         messages.append({
             "role": "assistant",
             "content": assistant_reply or None,
             "tool_calls": list(tool_calls.values())
         })
 
-        # Execute tools
         for call in tool_calls.values():
 
             function_name = call["function"]["name"]
@@ -135,19 +146,20 @@ def streamed_resp():
             )
 
             if function_name == "get_user_profile":
-                result = get_user_profile(args["user_id"])
+                result = get_user_profile(**args)
+
+            elif function_name == "extract_task":
+                result = extract_task(**args)
 
             else:
                 raise ValueError(f"Unknown function: {function_name}")
 
-            # Append tool result
             messages.append({
                 "role": "tool",
                 "tool_call_id": call["id"],
                 "content": json.dumps(result)
             })
 
-        # Final response after tool execution
         final = client.chat.completions.create(
             model=MODEL,
             messages=messages,

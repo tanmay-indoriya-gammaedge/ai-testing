@@ -25,5 +25,25 @@ tools = [
                 "additionalProperties": False
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "extract_task",
+            "description": "Extract task information from user text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string"},
+                    "priority": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"]
+                    },
+                    "completed": {"type": "boolean"}
+                },
+                "required": ["task", "priority", "completed"],
+                "additionalProperties": False
+            }
+        }
     }
 ]
